@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Scrapy
+.scrapy/
+*.log
+dbs/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.manifest
+*.spec
+
+# Screenshots
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.svg
+
+# Output files
+*.json
+*.csv
+*.jl
+*.xml
+output/
+
+# IDE
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Browser profiles
+chrome_profile/
+persistent_chrome_profile/
+
+# Playwright
+playwright-report/
+test-results/
+
+# Temp files
+*.tmp
+*.temp
+*.bak
+.cache/
+
+# OS files
+Thumbs.db
+Desktop.ini

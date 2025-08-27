@@ -66,7 +66,7 @@ def extract_videos_to_dislike(homepage_data):
     
     return dislike_list
 
-def extract_videos_to_like(search_data, max_videos=10, max_shorts=10):
+def extract_videos_to_like(search_data, max_videos=15, max_shorts=15):
     """
     Extract random videos and shorts marked for like from search results
     
@@ -217,7 +217,7 @@ def main():
     
     # Extract videos to like (max 10 videos, 10 shorts from search)
     print("\n🔍 Extracting videos to like from search results...")
-    like_list, total_videos, total_shorts = extract_videos_to_like(search_data, max_videos=10, max_shorts=10)
+    like_list, total_videos, total_shorts = extract_videos_to_like(search_data, max_videos=15, max_shorts=15)
     print(f"  Selected {len(like_list)} items to like")
     
     # Create the action list

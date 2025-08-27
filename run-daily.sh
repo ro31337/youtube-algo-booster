@@ -9,13 +9,13 @@ echo "Date: $(date)"
 echo "============================================================"
 
 # Run the complete pipeline
-python 03_youtube_get_index_page_videos.py && \
-python 04_content_curator.py && \
-python 05_youtube_search_recommendations.py && \
-python 06_search_recommendations_reducer.py && \
-python 07_content_curator.py && \
-python 08_youtube_action_list.py && \
-python 09_youtube_take_action.py
+./venv/bin/python 03_youtube_get_index_page_videos.py && \
+./venv/bin/python 04_content_curator.py && \
+./venv/bin/python 05_youtube_search_recommendations.py && \
+./venv/bin/python 06_search_recommendations_reducer.py && \
+./venv/bin/python 07_content_curator.py && \
+./venv/bin/python 08_youtube_action_list.py && \
+./venv/bin/python 09_youtube_take_action.py
 
 # Check if all scripts ran successfully
 if [ $? -eq 0 ]; then

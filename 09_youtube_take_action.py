@@ -44,11 +44,16 @@ async def perform_youtube_actions(debug_mode=False):
     summary = action_data.get("summary", {})
     actions = action_data.get("actions", [])
     
-    print(f"  Total actions to perform: {len(actions)}")
-    print(f"  Videos to dislike: {summary.get('videos_to_dislike', 0)}")
-    print(f"  Shorts to dislike: {summary.get('shorts_to_dislike', 0)}")
+    # Sort actions: likes first, then dislikes
+    # This helps avoid YouTube thinking we're just mass-disliking
+    actions_sorted = sorted(actions, key=lambda x: (x.get("action") != "like", x.get("type")))
+    
+    print(f"  Total actions to perform: {len(actions_sorted)}")
     print(f"  Videos to like: {summary.get('videos_to_like', 0)}")
     print(f"  Shorts to like: {summary.get('shorts_to_like', 0)}")
+    print(f"  Videos to dislike: {summary.get('videos_to_dislike', 0)}")
+    print(f"  Shorts to dislike: {summary.get('shorts_to_dislike', 0)}")
+    print("\n📌 Strategy: Performing likes first, then dislikes...")
     
     # Create screenshots directory if it doesn't exist
     screenshots_dir = Path("./screenshots")
@@ -91,10 +96,20 @@ async def perform_youtube_actions(debug_mode=False):
                 });
             """)
             
-            # Navigate to YouTube
+            # Navigate to YouTube with retries
             print("Navigating to YouTube...")
-            await page.goto("https://www.youtube.com", wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(2000)
+            max_retries = 3
+            for retry in range(max_retries):
+                try:
+                    await page.goto("https://www.youtube.com", wait_until="domcontentloaded", timeout=30000)
+                    await page.wait_for_timeout(2000)
+                    break
+                except Exception as e:
+                    if retry < max_retries - 1:
+                        print(f"  ⚠️ Navigation timeout, retrying ({retry + 1}/{max_retries})...")
+                        await page.wait_for_timeout(3000)
+                    else:
+                        raise e
             
             # Check authentication using shared function
             auth_result = await check_youtube_auth(page, "python 09_youtube_take_action.py")
@@ -105,8 +120,8 @@ async def perform_youtube_actions(debug_mode=False):
             completed_actions = 0
             failed_actions = 0
             
-            # Process each action
-            for idx, action_item in enumerate(actions, 1):
+            # Process each action (now sorted with likes first)
+            for idx, action_item in enumerate(actions_sorted, 1):
                 url = action_item.get("url")
                 video_type = action_item.get("type")
                 action = action_item.get("action")
@@ -117,10 +132,24 @@ async def perform_youtube_actions(debug_mode=False):
                 print(f"   URL: {url[:60]}...")
                 
                 try:
-                    # Navigate to the video
+                    # Navigate to the video with retries
                     print(f"   Navigating to {video_type}...")
-                    await page.goto(url, wait_until="networkidle", timeout=15000)
-                    await page.wait_for_timeout(2000)  # Wait for page to fully load
+                    nav_success = False
+                    for nav_retry in range(2):
+                        try:
+                            await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                            await page.wait_for_timeout(2000)  # Wait for page to fully load
+                            nav_success = True
+                            break
+                        except Exception as nav_e:
+                            if nav_retry == 0:
+                                print(f"   ⚠️ Navigation timeout, retrying...")
+                                await page.wait_for_timeout(2000)
+                            else:
+                                raise nav_e
+                    
+                    if not nav_success:
+                        raise Exception("Failed to navigate after retries")
                     
                     # ============================================
                     # PERFORM LIKE/DISLIKE ACTION
@@ -144,21 +173,42 @@ async def perform_youtube_actions(debug_mode=False):
                     
                     print(f"   Performing {action}...")
                     
-                    try:
-                        # Wait for the button to be available
-                        button = await page.wait_for_selector(button_selector, timeout=5000)
-                        
-                        # Check if already pressed (aria-pressed="true")
-                        is_pressed = await button.get_attribute("aria-pressed")
-                        
-                        if is_pressed == "true":
-                            print(f"   ✓ Already {action}d")
-                        else:
-                            # Click the button
-                            await button.click()
-                            print(f"   ✅ {action.capitalize()} action performed")
-                        
-                        # Wait 1 second after action
+                    # Try multiple times to find and click the button
+                    action_success = False
+                    for attempt in range(3):
+                        try:
+                            # Wait for the button to be available
+                            button = await page.wait_for_selector(button_selector, timeout=5000)
+                            
+                            # Scroll button into view
+                            await button.scroll_into_view_if_needed()
+                            await page.wait_for_timeout(500)
+                            
+                            # Check if already pressed (aria-pressed="true")
+                            is_pressed = await button.get_attribute("aria-pressed")
+                            
+                            if is_pressed == "true":
+                                print(f"   ✓ Already {action}d")
+                                action_success = True
+                                break
+                            else:
+                                # Click the button with force option
+                                await button.click(force=True)
+                                print(f"   ✅ {action.capitalize()} action performed")
+                                action_success = True
+                                break
+                            
+                        except Exception as btn_e:
+                            if attempt < 2:
+                                print(f"   ⚠️ Button not ready, retrying ({attempt + 1}/3)...")
+                                await page.wait_for_timeout(2000)
+                                # Try scrolling down a bit in case button is below fold
+                                await page.evaluate("window.scrollBy(0, 200)")
+                            else:
+                                print(f"   ⚠️ Could not find or click {action} button after 3 attempts")
+                    
+                    # Wait after action
+                    if action_success:
                         await page.wait_for_timeout(1000)
                         
                         # Take screenshot after action
@@ -166,11 +216,6 @@ async def perform_youtube_actions(debug_mode=False):
                         screenshot_path = screenshots_dir / f"action_{idx}_{action}_{timestamp}.png"
                         await page.screenshot(path=str(screenshot_path))
                         print(f"   📸 Screenshot saved: {screenshot_path}")
-                        
-                    except Exception as e:
-                        print(f"   ⚠️ Could not find or click {action} button: {e}")
-                        # Try alternative approach or log the issue
-                        pass
                     
                     completed_actions += 1
                     
@@ -189,9 +234,14 @@ async def perform_youtube_actions(debug_mode=False):
                     print(f"   ❌ Error performing action: {e}")
                     failed_actions += 1
                     
-                # Small delay between actions to avoid rate limiting
-                if idx < len(actions) and not debug_mode:
-                    await page.wait_for_timeout(1500)
+                # Variable delay between actions to avoid rate limiting
+                if idx < len(actions_sorted) and not debug_mode:
+                    # Longer delay every 5 actions
+                    if idx % 5 == 0:
+                        print("   ⏳ Taking a longer break to avoid rate limiting...")
+                        await page.wait_for_timeout(5000)
+                    else:
+                        await page.wait_for_timeout(2000)
             
             # Display summary (only in non-debug mode)
             if not debug_mode:
@@ -199,7 +249,11 @@ async def perform_youtube_actions(debug_mode=False):
                 print(f"📊 Results:")
                 print(f"  Completed actions: {completed_actions}")
                 print(f"  Failed actions: {failed_actions}")
-                print(f"  Total processed: {completed_actions + failed_actions}/{len(actions)}")
+                print(f"  Total processed: {completed_actions + failed_actions}/{len(actions_sorted)}")
+                
+                if failed_actions > 0:
+                    print(f"\n⚠️ Some actions failed. This is normal - videos may be removed or unavailable.")
+                    print(f"   Consider running the script again later for failed items.")
                 
                 print("\n" + "=" * 60)
                 print("Actions complete!")

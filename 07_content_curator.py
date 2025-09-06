@@ -77,6 +77,38 @@ Quality indicators to look for:
 
 Remember: Just because a video appeared in an educational search doesn't mean it's truly educational. Be selective and prioritize quality.
 
+CRITICAL JSON STRUCTURE REQUIREMENT:
+You MUST return the EXACT structure shown below. DO NOT wrap or nest the response.
+DO NOT add any additional wrapper objects around the structure.
+The root level MUST have "searches" as a direct array, NOT nested inside another object.
+
+Your response MUST follow this EXACT structure:
+{
+  "searches": [
+    {
+      "search_term": "the search term here",
+      "videos": [
+        {
+          "title": "video title",
+          "url": "video url",
+          "like": true or false
+        }
+      ],
+      "shorts": [
+        {
+          "title": "short title",
+          "url": "short url",
+          "like": true or false
+        }
+      ]
+    }
+  ]
+}
+
+DO NOT return {"searches": {"searches": [...]}} - that is WRONG!
+DO NOT add any wrapper - return EXACTLY the structure shown above!
+Your response must start with {"searches": [ and NOT with {"searches": {"searches":
+
 """
     
     if math_standards:
@@ -106,40 +138,79 @@ Ensure math videos align with these standards and are at the appropriate level.
 
 def analyze_with_openai(prompt, api_key):
     """Send prompt to OpenAI and get response"""
-    try:
-        # Initialize OpenAI client
-        client = OpenAI(api_key=api_key)
-        
-        print("🤖 Sending request to OpenAI GPT-4o-mini...")
-        print("   This may take a while due to the large number of videos...")
-        
-        # Create completion
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an educational content curator helping parents ensure their child watches quality educational content. Always respond with valid JSON only."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            temperature=0.7,
-            max_tokens=8000,  # Increased for larger response
-            response_format={"type": "json_object"}
-        )
-        
-        # Extract the response
-        ai_response = response.choices[0].message.content
-        
-        # Parse JSON response
-        return json.loads(ai_response)
-        
-    except Exception as e:
-        print(f"❌ Error communicating with OpenAI: {e}")
-        return None
+    max_retries = 3
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            # Initialize OpenAI client
+            client = OpenAI(api_key=api_key, timeout=60.0)  # Add 60 second timeout
+            
+            if retry_count == 0:
+                print("🤖 Sending request to OpenAI GPT-4o-mini...")
+                print("   This may take a while due to the large number of videos...")
+            else:
+                print(f"   Retry {retry_count}/{max_retries}...")
+            
+            # Create completion
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an educational content curator helping parents ensure their child watches quality educational content. Return ONLY valid JSON following the EXACT structure specified. DO NOT nest or wrap the response. The root must be {\"searches\": [...]} with NO additional wrapping."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=8000,  # Increased for larger response
+                response_format={"type": "json_object"},
+                timeout=60.0  # 60 second timeout for the API call
+            )
+            
+            # Extract the response
+            ai_response = response.choices[0].message.content
+            
+            # Parse JSON response
+            parsed_response = json.loads(ai_response)
+            
+            # Validate the response structure
+            if not isinstance(parsed_response, dict):
+                raise ValueError("Response is not a dictionary")
+            
+            # Ensure we have the expected structure
+            if "searches" not in parsed_response and "results" not in parsed_response:
+                # Try to create proper structure if AI returned flat list
+                if isinstance(parsed_response, list):
+                    parsed_response = {"searches": parsed_response}
+                else:
+                    raise ValueError("Response missing 'searches' or 'results' key")
+            
+            return parsed_response
+            
+        except (openai.APITimeoutError, openai.APIConnectionError) as e:
+            print(f"⚠️  Connection/timeout error: {e}")
+            retry_count += 1
+            if retry_count < max_retries:
+                import time
+                wait_time = retry_count * 5  # Progressive backoff: 5s, 10s, 15s
+                print(f"   Waiting {wait_time} seconds before retry...")
+                time.sleep(wait_time)
+            else:
+                print(f"❌ Failed after {max_retries} retries")
+                return None
+        except json.JSONDecodeError as e:
+            print(f"❌ Error parsing JSON response: {e}")
+            print(f"   Raw response: {ai_response[:500]}...")  # Show first 500 chars
+            return None
+        except Exception as e:
+            print(f"❌ Error communicating with OpenAI: {e}")
+            retry_count += 1
+            if retry_count >= max_retries:
+                return None
 
 def save_results(ai_response, original_data):
     """Save AI analysis results to JSON file"""
@@ -181,6 +252,15 @@ def display_results(ai_response):
     total_shorts_disliked = 0
     
     for search in searches_data:
+        # Handle case where search might be a string or malformed
+        if isinstance(search, str):
+            print(f"⚠️  Skipping malformed search entry: {search[:100]}...")
+            continue
+        
+        if not isinstance(search, dict):
+            print(f"⚠️  Skipping non-dict search entry: {type(search)}")
+            continue
+            
         search_term = search.get("search_term", "Unknown")
         videos = search.get("videos", [])
         shorts = search.get("shorts", [])

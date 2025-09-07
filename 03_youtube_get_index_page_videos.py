@@ -97,14 +97,15 @@ async def extract_youtube_videos(debug_mode=False):
             print("\nExtracting regular videos...")
             videos = await page.evaluate("""
                 () => {
-                    const videoElements = document.querySelectorAll('a.yt-lockup-metadata-view-model-wiz__title');
+                    const videoElements = document.querySelectorAll('a[href^="/watch?v="]');
                     const videos = [];
                     
                     videoElements.forEach(element => {
                         const titleElement = element.querySelector('span.yt-core-attributed-string');
                         const href = element.getAttribute('href');
                         
-                        if (titleElement && href && href.startsWith('/watch')) {
+                        // Only take links that have a title span inside them
+                        if (titleElement && href) {
                             videos.push({
                                 title: titleElement.textContent.trim(),
                                 url: 'https://www.youtube.com' + href,

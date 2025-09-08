@@ -263,6 +263,8 @@ async def perform_youtube_actions(debug_mode=False):
             print(f"\n❌ Error during action execution: {e}")
             if debug_mode:
                 input("\nPress Enter to close the browser and exit...")
+            await context.close()
+            sys.exit(1)  # Exit with error code
             
         finally:
             if not debug_mode:

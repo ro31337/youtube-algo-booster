@@ -7,6 +7,7 @@ Runs in headless mode using saved session
 import asyncio
 import argparse
 import json
+import sys
 from pathlib import Path
 from patchright.async_api import async_playwright
 from datetime import datetime
@@ -188,6 +189,8 @@ async def extract_youtube_videos(debug_mode=False):
             print(f"\n❌ Error during automation: {e}")
             if debug_mode:
                 input("\nPress Enter to close the browser and exit...")
+            await context.close()
+            sys.exit(1)  # Exit with error code
             
         finally:
             await context.close()
